@@ -55,6 +55,7 @@ func New() *cmd.SuperCommand {
 			DefaultConfig: os.Getenv(osenv.JujuLoggingConfigEnvKey),
 		},
 		NotifyHelp: notifyHelp,
+		Version:    "2.1.1",
 	})
 	c.Register(&attachCommand{})
 	c.Register(&grantCommand{})
