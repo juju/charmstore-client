@@ -22,6 +22,8 @@ import (
 	"gopkg.in/macaroon-bakery.v1/httpbakery"
 	hbform "gopkg.in/macaroon-bakery.v1/httpbakery/form"
 	"launchpad.net/gnuflag"
+
+	"github.com/juju/charmstore-client/version"
 )
 
 var logger = loggo.GetLogger("charm.cmd.charm")
@@ -55,7 +57,7 @@ func New() *cmd.SuperCommand {
 			DefaultConfig: os.Getenv(osenv.JujuLoggingConfigEnvKey),
 		},
 		NotifyHelp: notifyHelp,
-		Version:    "2.1.1",
+		Version:    version.Version,
 	})
 	c.Register(&attachCommand{})
 	c.Register(&grantCommand{})
