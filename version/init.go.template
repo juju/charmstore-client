@@ -1,0 +1,11 @@
+package version
+
+// The code below is used to update the version with the correct version number
+// for the current build. It is expected that an appropriate build script or
+// Makefile will create a new init.go file based on this template using a
+// command like the following:
+// gofmt -r "unknownVersion -> \"${VERSION}\"" init.go.tmpl > init.go
+
+func init() {
+    Version = unknownVersion
+}

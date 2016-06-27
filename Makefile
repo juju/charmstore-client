@@ -8,6 +8,7 @@ PROJECT := github.com/juju/charmstore-client
 PROJECT_DIR := $(shell go list -e -f '{{.Dir}}' $(PROJECT))
 
 INSTALL_FILE=install -m 644 -p
+VERSION := $(shell git describe --abbrev=0)
 
 ifeq ($(shell uname -p | sed -r 's/.*(x86|armel|armhf).*/golang/'), golang)
 	GO_C := golang
@@ -15,6 +16,12 @@ ifeq ($(shell uname -p | sed -r 's/.*(x86|armel|armhf).*/golang/'), golang)
 else
 	GO_C := gccgo-4.9 gccgo-go
 	INSTALL_FLAGS := -gccgoflags=-static-libgo
+endif
+
+ifeq ($(VERSION),no)
+	VERSIONDEPS :=
+else
+	VERSIONDEPS := version/init.go
 endif
 
 default: build
@@ -27,13 +34,13 @@ $(GOPATH)/bin/godeps:
 
 ifeq ($(CURDIR),$(PROJECT_DIR))
 
-build:
+build: $(VERSIONDEPS)
 	go build $(PROJECT)/...
 
-check:
+check: $(VERSIONDEPS)
 	go test $(PROJECT)/...
 
-install:
+install: $(VERSIONDEPS)
 	go install $(INSTALL_FLAGS) -v $(PROJECT)/...
 
 clean:
@@ -72,6 +79,10 @@ deps: $(GOPATH)/bin/godeps
 # Generate the dependencies file.
 create-deps: $(GOPATH)/bin/godeps
 	godeps -t $(shell go list $(PROJECT)/...) > dependencies.tsv || true
+
+# Generate version information
+version/init.go: version/init.go.template FORCE
+	gofmt -r "unknownVersion -> \"${VERSION}\"" $< > $@
 
 # Generate man pages.
 man/man1:
@@ -115,5 +126,5 @@ help:
 	@echo 'make install-bash-completion - Install completion to $$DESTDIR/usr/share/bash-completion/completions/'
 	@echo 'make uninstall-bash-completion - Remove completion from $$DESTDIR/usr/share/bash-completion/completions/'
 
-.PHONY: build check clean create-deps deps format help install simplify \
+.PHONY: build check clean create-deps deps FORCE format help install simplify \
 	install-man uninstall-man install-bash-completion uninstall-bash-completion
