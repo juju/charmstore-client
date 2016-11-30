@@ -444,6 +444,7 @@ func parseBzrLogEntry(entryText string) (bzrLogEntry, error) {
 		val := strings.TrimLeft(kvp[1], " ")
 		switch kvp[0] {
 		case "revno":
+			val = strings.TrimSuffix(val, " [merge]")
 			revno, err := strconv.Atoi(val)
 			if err != nil {
 				return bzrLogEntry{}, errgo.Newf("invalid revision number %q", val)
