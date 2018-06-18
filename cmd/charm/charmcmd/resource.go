@@ -10,11 +10,16 @@ import (
 	"encoding/json"
 	"io"
 	"io/ioutil"
+	"log"
+	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/docker/distribution/reference"
+	"github.com/docker/distribution/registry/client/auth"
+	"github.com/docker/distribution/registry/client/auth/challenge"
+	"github.com/docker/distribution/registry/client/transport"
 	dockertypes "github.com/docker/docker/api/types"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
@@ -131,7 +136,7 @@ func uploadDockerResource(p uploadResourceParams) (int, error) {
 	if len(refStr) != len(p.reference) {
 		// It's an external image. Find the digest from its associated repository,
 		// then tell the charm store about that.
-		return 0, errgo.Newf("external images not yet supported")
+		return uploadExternalDockerResource(p, ref)
 	}
 	// ask charmstore for upload info
 	info, err := p.client.DockerResourceUploadInfo(p.charmId, p.resourceName)
@@ -194,6 +199,115 @@ func uploadDockerResource(p uploadResourceParams) (int, error) {
 		return 0, errgo.Notef(err, "cannot add docker resource")
 	}
 	return rev, nil
+}
+
+func uploadExternalDockerResource(p uploadResourceParams, ref reference.Named) (int, error) {
+	digest, err := imageDigestForReference(p, ref)
+	if err != nil {
+		return 0, errgo.Mask(err)
+	}
+	rev, err := p.client.AddDockerResource(p.charmId, p.resourceName, ref.Name(), digest)
+	if err != nil {
+		return 0, errgo.Notef(err, "cannot add docker resource")
+	}
+	return rev, nil
+}
+
+func imageDigestForReference(p uploadResourceParams, ref reference.Named) (string, error) {
+	endpoint := registryEndpointForReference(ref)
+	path := reference.Path(ref)
+	reqModifier, err := registryAuthorizer(endpoint, path)
+	if err != nil {
+		return "", errgo.Mask(err)
+	}
+	resp, err := dockerRegistryDo("HEAD", endpoint+path+"/manifests/"+referenceTagOrDigest(ref), reqModifier)
+	if err != nil {
+		return "", errgo.Mask(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", errgo.Newf("cannot get information on %v: %v", ref, resp.Status)
+	}
+	if v := resp.Header.Get("Docker-Distribution-Api-Version"); !strings.HasPrefix(v, "registry/2.") {
+		return "", errgo.Newf("incompatible registry version %q", v)
+	}
+	digest := resp.Header.Get("Docker-Content-Digest")
+	if digest == "" {
+		return "", errgo.Newf("no digest in response")
+	}
+	if ref, ok := ref.(reference.Canonical); ok {
+		// The image is referred to by a digest and that works,
+		// so we're all good.
+		return string(ref.Digest()), nil
+	}
+	// The image is referred to by a tag; we don't know for sure
+	// that it was uploaded as a v2 image, so we check to see
+	// that we can get information on the image using the digest
+	// we've just discovered.
+	resp, err = dockerRegistryDo("HEAD", endpoint+path+"/manifests/"+digest, reqModifier)
+	if err != nil {
+		return "", errgo.Mask(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", errgo.Newf("cannot verify image digest: %v", resp.Status)
+	}
+	return digest, nil
+}
+
+func dockerRegistryDo(method, url string, reqModifier transport.RequestModifier) (*http.Response, error) {
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return nil, errgo.Mask(err)
+	}
+	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+	if err := reqModifier.ModifyRequest(req); err != nil {
+		return nil, errgo.Mask(err)
+	}
+	log.Printf("%s %s %#v", method, url, req.Header)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, errgo.Mask(err)
+	}
+	return resp, nil
+}
+
+func referenceTagOrDigest(ref reference.Named) string {
+	switch ref := reference.TagNameOnly(ref).(type) {
+	case reference.Tagged:
+		return ref.Tag()
+	case reference.Canonical:
+		return string(ref.Digest())
+	}
+	panic("TagNameOnly returned reference without tag or digest")
+}
+
+// registryAuthorizer returns a request modifier that will add
+// appropriate authorization information to HTTP requests to the given
+// API endpoint to authorize them to pull information related to the
+// given image path.
+func registryAuthorizer(endpoint string, path string) (transport.RequestModifier, error) {
+	// Get the v2 root, which should give us the appropriate unauthorized
+	// error. We need to get the API root because the returned
+	// request modifier relies on the fact that AddResponse is called
+	// with this, not the final URL.
+	resp, err := http.Get(endpoint)
+	if err != nil {
+		return nil, errgo.Notef(err, "cannot get registry authorization response")
+	}
+	defer resp.Body.Close()
+	authh := auth.NewTokenHandler(http.DefaultTransport, nil, path, "pull")
+	authManager := challenge.NewSimpleManager()
+	authManager.AddResponse(resp)
+	return auth.NewAuthorizer(authManager, authh), nil
+}
+
+func registryEndpointForReference(ref reference.Named) string {
+	h := reference.Domain(ref)
+	if h == "docker.io" {
+		h = "registry-1.docker.io"
+	}
+	return "https://" + h + "/v2/"
 }
 
 // readSeekerSHA256 returns the SHA256 checksum of r, seeking

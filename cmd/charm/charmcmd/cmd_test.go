@@ -72,7 +72,11 @@ type commonSuite struct {
 	handler charmstore.HTTPCloseHandler
 
 	dockerSrv     *httptest.Server
+	dockerRegistry     *httptest.Server
+	dockerAuthServer     *httptest.Server
 	dockerHandler *dockerHandler
+	dockerAuthHandler *dockerAuthHandler
+	dockerRegistryHandler *dockerRegistryHandler
 	dockerHost    string
 
 	cookieFile   string
@@ -115,6 +119,8 @@ func (s *commonSuite) TearDownTest(c *gc.C) {
 	s.srv.Close()
 	s.dockerSrv.Close()
 	s.handler.Close()
+	s.dockerRegistry.Close()
+	s.dockerAuthServer.Close()
 	s.FakeHomeSuite.TearDownTest(c)
 	s.IsolatedMgoSuite.TearDownTest(c)
 }
@@ -125,6 +131,11 @@ func (s *commonSuite) startServer(c *gc.C, session *mgo.Session) {
 
 	s.dockerHandler = newDockerHandler()
 	s.dockerSrv = httptest.NewServer(s.dockerHandler)
+	s.dockerAuthHandler = newDockerAuthHandler()
+	s.dockerAuthServer = httptest.NewServer(s.dockerAuthHandler)
+	s.dockerRegistryHandler = newDockerRegistryHandler(s.dockerAuthServer.URL)
+	s.dockerRegistry = httptest.NewTLSServer(s.dockerRegistryHandler)
+
 	dockerURL, err := url.Parse(s.dockerSrv.URL)
 	c.Assert(err, gc.Equals, nil)
 	s.dockerHost = dockerURL.Host

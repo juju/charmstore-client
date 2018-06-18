@@ -30,6 +30,7 @@ import (
 	charmtesting "gopkg.in/juju/charmrepo.v4/testing"
 
 	"github.com/juju/charmstore-client/cmd/charm/charmcmd"
+	"net/url"
 )
 
 type attachSuite struct {
@@ -341,7 +342,10 @@ func (s *attachSuite) TestUploadExternalDockerResource(c *gc.C) {
 	_, err := s.client.UploadCharm(id, ch)
 	c.Assert(err, gc.IsNil)
 
-	_, stderr, exitCode := run(c.MkDir(), "attach", "~bob/wordpress-0", "docker-resource=external::foo/bar")
+	u, err := url.Parse(s.dockerRegistry.URL)
+	c.Assert(err, gc.IsNil)
+
+	_, stderr, exitCode := run(c.MkDir(), "attach", "~bob/wordpress-0", "docker-resource=external::"+ u.Host +"/foo/bar")
 	c.Assert(exitCode, gc.Equals, 1)
 	c.Assert(stderr, gc.Matches, `ERROR external images not yet supported\n`)
 }
