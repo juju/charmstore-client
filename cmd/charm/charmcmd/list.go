@@ -8,17 +8,18 @@ import (
 	"io"
 	"strings"
 
+	"net/url"
+
 	"github.com/juju/cmd"
 	"github.com/juju/gnuflag"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/juju/charmrepo.v4/csclient/params"
-	"net/url"
 )
 
 type listCommand struct {
 	cmd.CommandBase
-	auth authInfo
-	out  cmd.Output
+	auth  authInfo
+	out   cmd.Output
 	users string
 }
 
@@ -72,7 +73,16 @@ func (c *listCommand) Run(ctxt *cmd.Context) error {
 		return errgo.Notef(err, "cannot create charm store client")
 	}
 	defer client.jar.Save()
-
+	csurl := client.ServerURL()
+	storeurl, err := url.Parse(csurl)
+	if err != nil {
+		return errgo.Notef(err, "invalid URL %q for JUJU_CHARMSTORE", csurl)
+	}
+	storeurl.Path = strings.TrimSuffix(storeurl.Path, "/") + "/"
+	if len(client.jar.Cookies(storeurl)) == 0 {
+		fmt.Fprintf(ctxt.Stdout, "not logged into %v\n", csurl)
+		return nil
+	}
 	if c.users == "" {
 		resp, err := client.WhoAmI()
 		if err != nil {
@@ -86,7 +96,7 @@ func (c *listCommand) Run(ctxt *cmd.Context) error {
 		return errgo.Mask(err)
 	}
 	v := url.Values{
-		"sort": []string{"name,-series"},
+		"sort":  []string{"name,-series"},
 		"owner": users,
 	}
 	path := "/list?" + v.Encode()
