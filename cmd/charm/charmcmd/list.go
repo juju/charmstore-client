@@ -74,6 +74,16 @@ func (c *listCommand) Run(ctxt *cmd.Context) error {
 	defer client.jar.Save()
 
 	if c.users == "" {
+		csurl := client.ServerURL()
+		storeurl, err := url.Parse(csurl)
+		if err != nil {
+			return errgo.Notef(err, "invalid URL %q for JUJU_CHARMSTORE", csurl)
+		}
+		storeurl.Path = strings.TrimSuffix(storeurl.Path, "/") + "/"
+		if len(client.jar.Cookies(storeurl)) == 0 {
+			fmt.Fprintf(ctxt.Stdout, "not logged into %v\n", csurl)
+			return nil
+		}
 		resp, err := client.WhoAmI()
 		if err != nil {
 			return errgo.Notef(err, "cannot retrieve identity")
